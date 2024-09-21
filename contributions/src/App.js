@@ -1,25 +1,20 @@
-import logo from './logo.svg';
-import './App.css';
+import React from 'react';
+import Homepage from './components/Homepage';
+import ContributionForm from './components/ContributionForm';
+import ContributionList from './components/ContributionList';
+import io from 'socket.io-client';
+import './styles.css';
 
-function App() {
+const socket = io('http://localhost:5000');
+
+const App = () => {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <>
+      <Homepage />
+      <ContributionForm socket={socket} />
+      <ContributionList socket={socket} />
+    </>
   );
-}
+};
 
 export default App;
