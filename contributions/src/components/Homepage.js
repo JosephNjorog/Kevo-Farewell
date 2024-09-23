@@ -1,6 +1,6 @@
 import React from 'react';
 import './styles.css'; // Ensure the path is correct
-import kevinImage from '../assets/kevin.jpg'; // Adjust the path according to your structure
+import kevinImage from '../assets/kevin.jpeg'; // Adjust the path according to your structure
 
 const Homepage = () => {
   return (
