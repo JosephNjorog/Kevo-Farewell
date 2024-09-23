@@ -86,3 +86,20 @@ li {
     transform: translateY(0);
   }
 }
+
+/* New styles for homepage */
+.homepage {
+  text-align: center;
+  padding: 20px;
+}
+
+.kevin-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+
+.phone-number {
+  font-size: 1.5em;
+  color: #333;
+}
