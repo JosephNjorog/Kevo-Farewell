@@ -1,99 +1,96 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const mongoose = require('mongoose');
-const socketIo = require('socket.io');
-const http = require('http');
-const Mpesa = require('mpesa-api').Mpesa;
+const cors = require('cors');
+const axios = require('axios');
 
 const app = express();
-const server = http.createServer(app);
-const io = socketIo(server);
-
-// Body-parser middleware
 app.use(bodyParser.json());
+app.use(cors());
 
-// MongoDB connection
-mongoose.connect('your-mongo-db-connection-string', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
+const shortCode = 'YOUR_SHORT_CODE';
+const lipaNaMpesaOnlinePassKey = 'YOUR_PASS_KEY';
+const consumerKey = 'YOUR_CONSUMER_KEY';
+const consumerSecret = 'YOUR_CONSUMER_SECRET';
+const phoneNumber = '254711749396'; // Replace with the recipient's phone number
+const partyA = '254711749396'; // Replace with the contributor's phone number (use as placeholder)
+const accountReference = 'Contribution';
+const transactionDesc = 'Contribution for Kevin';
 
-// Contribution Schema and Model
-const ContributionSchema = new mongoose.Schema({
-  name: String,
-  phone: String,
-  amount: Number,
-});
+const tokenUrl = 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
+const stkPushUrl = 'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest';
+const callbackUrl = 'https://your-server-url/callback';
 
-const Contribution = mongoose.model('Contribution', ContributionSchema);
+let accessToken = '';
 
-// M-Pesa API credentials
-const credentials = {
-  clientKey: 'your-client-key',
-  clientSecret: 'your-client-secret',
-  initiatorPassword: 'your-initiator-password',
-  securityCredential: 'your-security-credential',
+const getAccessToken = async () => {
+  const auth = 'Basic ' + Buffer.from(consumerKey + ':' + consumerSecret).toString('base64');
+  try {
+    const response = await axios.get(tokenUrl, {
+      headers: {
+        Authorization: auth
+      }
+    });
+    accessToken = response.data.access_token;
+  } catch (error) {
+    console.error('Error fetching access token:', error);
+  }
 };
 
-const mpesa = new Mpesa(credentials, 'sandbox');
+app.post('/stkpush', async (req, res) => {
+  const amount = req.body.amount;
+  await getAccessToken();
 
-// Contribution endpoint with M-Pesa STK Push
-app.post('/contribute', async (req, res) => {
-  const { name, phone, amount } = req.body;
+  const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');
+  const password = Buffer.from(shortCode + lipaNaMpesaOnlinePassKey + timestamp).toString('base64');
 
-  // M-Pesa STK Push
-  const paymentDetails = {
-    BusinessShortCode: '174379',
+  const stkPushRequest = {
+    BusinessShortCode: shortCode,
+    Password: password,
+    Timestamp: timestamp,
+    TransactionType: 'CustomerPayBillOnline',
     Amount: amount,
-    PartyA: phone,
-    PartyB: '174379',
-    PhoneNumber: phone,
-    CallBackURL: 'https://your-domain.com/mpesa-callback',
-    AccountReference: 'KevinContribution',
-    TransactionDesc: 'Contribution for Kevin',
+    PartyA: partyA,
+    PartyB: shortCode,
+    PhoneNumber: phoneNumber,
+    CallBackURL: callbackUrl,
+    AccountReference: accountReference,
+    TransactionDesc: transactionDesc
   };
 
   try {
-    const response = await mpesa.lipaNaMpesaOnline(paymentDetails);
-
-    res.send({ success: true, data: response });
+    const response = await axios.post(stkPushUrl, stkPushRequest, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`
+      }
+    });
+    res.json(response.data);
   } catch (error) {
-    res.status(500).send({ success: false, error: error.message });
+    console.error('Error in STK Push:', error);
+    res.status(500).send('Error initiating STK Push');
   }
 });
 
-// M-Pesa callback endpoint
-app.post('/mpesa-callback', async (req, res) => {
-  const { Body } = req.body;
+app.post('/callback', (req, res) => {
+  const callbackData = req.body;
+  console.log('Callback received:', callbackData);
 
-  // Extract necessary details from the callback
-  const resultCode = Body.stkCallback.ResultCode;
-  const resultDesc = Body.stkCallback.ResultDesc;
-  const merchantRequestID = Body.stkCallback.MerchantRequestID;
-  const checkoutRequestID = Body.stkCallback.CheckoutRequestID;
-  const amount = Body.stkCallback.CallbackMetadata.Item.find(i => i.Name === 'Amount').Value;
-  const phone = Body.stkCallback.CallbackMetadata.Item.find(i => i.Name === 'PhoneNumber').Value;
+  if (callbackData.Body.stkCallback.ResultCode === 0) {
+    const transactionDetails = callbackData.Body.stkCallback.CallbackMetadata.Item;
+    const amount = transactionDetails.find(item => item.Name === 'Amount').Value;
+    const phoneNumber = transactionDetails.find(item => item.Name === 'PhoneNumber').Value;
+    const transactionId = transactionDetails.find(item => item.Name === 'MpesaReceiptNumber').Value;
 
-  if (resultCode === 0) { // Transaction successful
-    const contribution = new Contribution({ name: 'Anonymous', phone, amount });
-    await contribution.save();
-    io.emit('new-contribution', contribution);
+    // You can save these details in your database or any storage
+    console.log(`Received ${amount} from ${phoneNumber}, Transaction ID: ${transactionId}`);
+
+    // Optionally, update the front-end with the new contribution
+    // e.g., using WebSocket or other real-time update mechanisms
   }
 
-  // Send response back to M-Pesa
-  res.json({ resultCode, resultDesc });
+  res.status(200).send('Callback received successfully');
 });
 
-// Socket.io connection
-io.on('connection', (socket) => {
-  console.log('New client connected');
-  socket.on('disconnect', () => {
-    console.log('Client disconnected');
-  });
-});
-
-// Start server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
